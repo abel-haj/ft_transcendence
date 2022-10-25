@@ -10,24 +10,21 @@ import { jwtConstants } from '../constants';
 export class passport_42 extends PassportStrategy(Strategy) {
 	constructor(private readonly usra: UsersService) {
     super({
-		clientSecret: jwtConstants.secret,
-		clientID: '3f898cb71115b6afcb8219bbfc835014640317c0d8b46306fc6b69b869d988f1',
-		callbackURL: 'http://localhost:3000/login',
+		clientID: process.env.APIID, // process.env.APIID
+		clientSecret: process.env.APISECRET, // process.env.APISECRET
+		callbackURL: process.env.APIREDIRECT, // process.env.APIREDIRECT
     },
 	async function verify(accessToken, refreshToken, profile, cb) 
 	{
 		var vr = await usra.findOne(profile.username);
-		console.log(vr);
 		if(vr ==  null)
 		{
-			console.log("not found new user -- start create ----");
 			vr = await usra.create({ // nake name in future // for fornt-end check
 				intra_login: profile.username,
 				avatar: profile._json.image_url,
 				status: "Offline",
 				two_factor_authentication: false
 			})
-			console.log(vr)
 		}
 		return cb(null, vr);
 	});

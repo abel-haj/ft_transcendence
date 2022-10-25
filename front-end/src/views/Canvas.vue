@@ -9,10 +9,10 @@ import VueToast from 'vue-toast-notification';
 import 'vue-toast-notification/dist/theme-sugar.css';
 Vue.use(VueToast, { position: 'top-right' });
 
-const HEIGHT = 600;
-const WIDTH = 800;
+const WIDTH = 1000;
+const HEIGHT = WIDTH / 2;
 const BARWIDTH = 20;
-const BARHEIGHT = 80;
+const BARHEIGHT = 100;
 const BALLRADIUS = 20;
 
 export default Vue.extend({
@@ -25,30 +25,42 @@ export default Vue.extend({
         timefunc: null as null | Function,
         gameover: false as boolean,
         isLoading: false as boolean,
-        seconds: 5 as number,
+        seconds: 0 as number,
+        displayText: "" as string,
 
         leftScore: 0 as number,
         rightScore: 0 as number,
 
         p5: null as P5 | null,
 
-        ballH: WIDTH/2 as number,
-        ballV: HEIGHT/2 as number,
+        ballH: WIDTH / 2 as number,
+        ballV: HEIGHT / 2 as number,
 
         leftbarH: 0 as number,
-        leftbarV: HEIGHT/2 - BARHEIGHT/2 as number,
+        leftbarV: HEIGHT / 2 - BARHEIGHT / 2 as number,
 
         rightbarH: WIDTH - BARWIDTH as number, // 800 - 20 = 720
-        rightbarV: HEIGHT/2 - BARHEIGHT/2 as number, // 600/2 - 80/2 = 260
+        rightbarV: HEIGHT / 2 - BARHEIGHT / 2 as number, // 600/2 - 80/2 = 260
     }),
 
     methods: {
+        back2game() {
+            this.gameSocket?.off('recieveCoord');
+            this.gameSocket?.off('gamefinished');
+            this.gameSocket?.off('setCountdown');
+            this.gameSocket?.off('setText');
+            this.gameSocket?.off('updateInvitedUsername');
+            this.gameSocket?.close();
+            const token = localStorage.getItem('token');
+            this.$socket.emit('clearGame', token)
+            this.$router.push({ name: 'Game' }).catch(() => { });
+            this.p5?.noLoop();
+        }
     },
 
     // called before mounted
     async created() {
         this.socketURL = location.protocol + "//" + location.hostname + ":" + 3000 + "/canvas";
-        // console.log(this.socketURL, 'SOCKET URL CANVAS.VUE');
         const token = localStorage.getItem('token');
 
         // VALIDATING
@@ -59,108 +71,117 @@ export default Vue.extend({
         // no query in uri
         if (this.gameId === "") {
 
-            console.log('redirecting with missing identifier error', this.gameId);
-            this.$router.push({ name: 'Game', params: { error: "Oops! Game was not found!" } });
-            return ;
+            this.$router.push({ name: 'Game', params: { error: "Oops! Game was not found!" } }).catch(() => { });
+            return;
         }
 
         // search id in database
-        if (!token)
-        {
-            console.log('redirecting with auth error');
-            this.$router.push({ name: 'Game', params: { error: "Who are you?! Are you logged in?" } });
-            return ;
+        if (!token) {
+            this.$router.push({ name: 'Game', params: { error: "Who are you?! Are you logged in?" } }).catch(() => { });
+            return;
         }
 
         const axerr = await axios.get('/verify_game/' + this.gameId,
-        { headers: { Authorization: token } })
+            { headers: { Authorization: token } })
 
-        .then((res: any) => {
-            // console.table(res.data);
+            .then((res: any) => {
 
-            // data not recieved properly
-            if (typeof res.data !== 'object')
-            {
-                console.log('redirecting with data error: axios');
-                this.$router.push({ name: 'Game', params: { error: "Oops! Something went wrong!" } });
-                return 1;
-            }
-
-            // game already ended
-            if (res.data.finished == 1)
-            {
-                console.log('redirecting with expiration error');
-                this.$router.push({ name: 'Game', params: { error: "This game has already finished!" } });
-                return 1;
-            }
-
-            if (res.data.finished == 0)
-            {
-                let usr = JSON.parse(Buffer .from(token.split('.')[1], 'base64').toString('utf8'));
-                // console.log('PLAYER DETAILS', res.data.player_one, res.data.player_two);
-
-                if (usr.sub === res.data.player_one.id) {
-
-                    this.playerMode = 'player';
-                    this.playerSide = 'left';
+                // data not recieved properly
+                if (typeof res.data !== 'object') {
+                    this.$router.push({ name: 'Game', params: { error: "Oops! Something went wrong!" } }).catch(() => { });
+                    return 1;
                 }
 
-                if (usr.sub === res.data.player_two.id) {
-
-                    this.playerMode = 'player';
-                    this.playerSide = 'right';
+                // game already ended
+                if (res.data.finished == 1) {
+                    const token = localStorage.getItem('token');
+                    this.$socket.emit('clearGame', token)
+                    this.$router.push({ name: 'Game', params: { error: "This game has already finished!" } }).catch(() => { });
+                    return 1;
                 }
 
-                window.document.querySelector("#leftPlayer")!.innerHTML = res.data.player_one.username.toUpperCase();
-                window.document.querySelector("#rightPlayer")!.innerHTML = res.data.player_two.username.toUpperCase();
-            }
+                // game is not normal theme redirect to speedy
+                if (res.data.type == 2) {
+                    this.$router.push({ name: 'Speedy', query: { match: res.data.id } }).catch(() => { });
+                    return 1;
+                }
 
-            return 0;
-        })
+                if (res.data.finished == 0) {
+                    let usr = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString('utf8'));
 
-        .catch((err: any) => {
+                    if (usr.sub === res.data.player_one.id) {
 
-            Vue.$toast.error( 'An error occured! Going back to lobby in 5s');
-            console.error('axios : verify_game ERROR', err);
+                        this.playerMode = 'player';
+                        this.playerSide = 'left';
+                    }
 
-            setTimeout(() => {
-                this.$router.push({ name: 'Game', params: { error: "Sorry for the inconvience please report this incident!" } });
-            }, 5 * 1000);
-            return 1;
-        });
+                    // invited player
+                    if (usr.sub !== res.data.player_one.id
+                        && !res.data.player_two) {
+
+                        axios.get('/accept_invite/' + usr.sub + '/' + this.gameId,
+                            { headers: { Authorization: token } })
+                            .then((ress) => {
+                                res.data.player_tow = ress.data
+                                window.document.querySelector("#rightPlayer")!.innerHTML = ress.data.username.toUpperCase();
+                                this.gameSocket?.emit('updateInvitedUsername', { gameid: this.gameId, username: ress.data.username });
+                            })
+                            .catch((err2) => {
+                                Vue.$toast.error('An error occured! Going back to lobby in 5s');
+
+                                setTimeout(() => {
+                                    this.$router.push({ name: 'Game', params: { error: "Sorry for the inconvience please report this incident!" } }).catch(() => { });
+                                }, 5 * 1000);
+                            });
+
+                        this.playerMode = 'player';
+                        this.playerSide = 'right';
+                    }
+                    else if (res.data.player_two &&
+                        usr.sub === res.data.player_two.id) {
+
+                        this.playerMode = 'player';
+                        this.playerSide = 'right';
+                    }
+                    if (this.playerMode !== 'spectator')
+                        this.$socket.emit('connectUserGame', { token: localStorage.getItem('token'), GameId: this.gameId });
+                    window.document.querySelector("#leftPlayer")!.innerHTML = res.data.player_one.username.toUpperCase();
+
+                    if (res.data.player_two) // protecting for game invite
+                        window.document.querySelector("#rightPlayer")!.innerHTML = res.data.player_two.username.toUpperCase();
+                }
+
+                return 0;
+            })
+
+            .catch((err: any) => {
+
+                Vue.$toast.error('An error occured! Going back to lobby in 5s');
+
+                setTimeout(() => {
+                    this.$router.push({ name: 'Game', params: { error: "Sorry for the inconvience please report this incident!" } }).catch(() => { });
+                }, 5 * 1000);
+                return 1;
+            });
 
         if (axerr)
-            return ;
+            return;
         // VALIDATING
 
-        // console.log('CLIENT GAME ID', this.gameId);
-
         this.gameSocket = io(this.socketURL, {
-            extraHeaders: { "c": "d" },
             transportOptions: {
-                polling: { //extraHeaders: {
-                    "a": "b",
-                    Authorization: 'Bearer ' + localStorage.getItem('token'),
-            },// },
-            query: {
-                xyz: 42
-            },
-            auth: {
-                param: 'value',
-            }
+                polling: {
+                    extraHeaders: {
+                        Authorization: 'Bearer ' + localStorage.getItem('token'),
+                    },
+                },
             },
         });
 
         // Infrom the server that the current player/ready is ready to receive data
-        this.gameSocket.emit("playerReady", { gameid: this.gameId, side: this.playerSide });
-        this.gameSocket.on("testing", (data: any) => {
-            // 
-            console.log('IT WORKED', data);
-        });
+        this.gameSocket?.emit("playerReady", { gameid: this.gameId, side: this.playerSide });
 
-
-        this.gameSocket.on("recieveCoord", (data: any) => {
-            console.log("CLIENT: GOT COORDINATION FROM SERVER!", data);
+        this.gameSocket?.on("recieveCoord", (data: any) => {
 
             // start game for the first time ever
             if (this.p5?.isLooping() === false && this.gameover === false)
@@ -183,40 +204,82 @@ export default Vue.extend({
             this.rightScore = data.rightScore;
         });
 
-        this.gameSocket.on("gamefinished", (data: any) => {
+        this.gameSocket?.on("gamefinished", (data: any) => {
 
-            console.log("CLIENT: GAME OVER!");
             this.p5?.noLoop();
             this.gameover = true;
             // redirect
         });
 
-        // get acknowledgement that server recieved the read
+        // timer from server for starting the game
         this.gameSocket?.on("setCountdown", (data: any) => {
-            console.log("CLIENT: Got countdown!", data);
-
-            // start game here...
-            // this.p5?.redraw();
-            // this.p5?.textAlign(this.p5.CENTER);
-            // this.p5?.fill(255, 255, 255);
-            // this.p5?.text(data.seconds, WIDTH/2, HEIGHT/2);
-            // this.p5?.redraw();
-
 
             this.isLoading = true;
             this.seconds = data.seconds;
             this.p5?.redraw();
             this.isLoading = false;
+        });
 
-            // console.log(this.p5);
+        // timer from server for starting the game
+        this.gameSocket?.on("setText", (data: any) => {
 
+            this.p5?.noLoop();
+            this.gameover = true;
+            this.isLoading = true;
+            this.seconds = 0;
+
+            // specify what to write
+            this.displayText = data.message;
+
+            setTimeout(() => {
+                // draw to write text
+                this.p5?.redraw();
+                this.p5?.redraw();
+                this.displayText = "";
+                this.isLoading = false;
+
+                setTimeout(() => {
+
+                    this.gameSocket?.off('recieveCoord');
+                    this.gameSocket?.off('gamefinished');
+                    this.gameSocket?.off('setCountdown');
+                    this.gameSocket?.off('setText');
+                    this.gameSocket?.off('updateInvitedUsername');
+                    this.gameSocket?.close();
+                    const token = localStorage.getItem('token');
+                    this.$socket.emit('clearGame', token)
+                    this.$router.push({ name: 'Game' }).catch(() => { });
+                }, 2 * 1000);
+
+            }, 0.25 * 1000);
+        });
+
+        this.gameSocket?.on("updateInvitedUsername", (data: any) => {
+            window.document.querySelector("#rightPlayer")!.innerHTML = data.username.toUpperCase();
         });
     },
-
+    beforeDestroy() {
+        const token = localStorage.getItem('token');
+        this.$socket.emit('clearGame', token);
+        this.gameSocket?.off('recieveCoord');
+        this.gameSocket?.off('gamefinished');
+        this.gameSocket?.off('setCountdown');
+        this.gameSocket?.off('setText');
+        this.gameSocket?.off('updateInvitedUsername');
+        this.gameSocket?.close();
+    },
     mounted() {
 
         // Creating the sketch itself
+        if (this.playerMode !== 'spectator')
+            this.$socket.emit('connectUserGame', { token: localStorage.getItem('token'), GameId: this.gameId });
+
         const sketch = (p5: P5) => {
+
+            p5.windowResized = () => {
+                // p5.resizeCanvas(p5.windowWidth, p5.windowWidth / 2);
+                // p5.redraw();
+            }
 
             // The sketch setup method 
             p5.setup = () => {
@@ -234,45 +297,50 @@ export default Vue.extend({
 
 
             // The sketch draw method
-            // Game loop
+            // Game lo-op
             p5.draw = () => {
-                console.log('still going');
 
                 if (this.playerMode !== "spectator") {
 
                     if (p5.keyIsDown(p5.UP_ARROW)) {
-                        this.gameSocket.emit('moveBarUp', { id: this.gameId, side: this.playerSide } );
+                        this.gameSocket?.emit('moveBarUp', { id: this.gameId, side: this.playerSide });
                     }
                     if (p5.keyIsDown(p5.DOWN_ARROW)) {
-                        this.gameSocket.emit('moveBarDown', { id: this.gameId, side: this.playerSide } );
+                        this.gameSocket?.emit('moveBarDown', { id: this.gameId, side: this.playerSide });
                     }
                 }
 
                 p5.background(51);
 
                 // left bar
-				p5.fill(255, 255, 255);
-				p5.rect(this.leftbarH, this.leftbarV, BARWIDTH, BARHEIGHT);
+                p5.fill(255, 255, 255);
+                p5.rect(this.leftbarH, this.leftbarV, BARWIDTH, BARHEIGHT);
 
 
                 // right bar
-				p5.fill(255, 255, 255);
-				p5.rect(this.rightbarH, this.rightbarV, BARWIDTH, BARHEIGHT);
+                p5.fill(255, 255, 255);
+                p5.rect(this.rightbarH, this.rightbarV, BARWIDTH, BARHEIGHT);
 
 
                 // ping pong ball
-				p5.fill(255);
-				p5.circle(this.ballH, this.ballV, BALLRADIUS);
+                p5.fill(255);
+                p5.circle(this.ballH, this.ballV, BALLRADIUS);
 
                 if (this.isLoading) {
 
-                    // console.log("should draw...", this.seconds);
-                    this.p5?.textAlign(this.p5.CENTER);
-                    this.p5?.fill('white');
-                    this.p5?.textSize(75);
-                    this.p5?.stroke('dodgerblue');
-                    this.p5?.text(this.seconds, WIDTH/2, HEIGHT/2);
-                    this.p5?.noStroke();
+                    if (this.seconds !== 0) {
+                        this.p5?.textAlign(this.p5.CENTER);
+                        this.p5?.fill('yellow');
+                        this.p5?.textSize(150);
+                        this.p5?.text(this.seconds, WIDTH / 2, HEIGHT / 2);
+                    }
+
+                    if (this.displayText !== "") {
+                        this.p5?.textAlign(this.p5.CENTER);
+                        this.p5?.fill('yellow');
+                        this.p5?.textSize(100);
+                        this.p5?.text(this.displayText, WIDTH / 2, HEIGHT / 2);
+                    }
                 }
             };
         };
@@ -283,61 +351,50 @@ export default Vue.extend({
 </script>
 
 <template>
-  <v-app id="inspire">
-   <v-main>
-      <v-container
-        class="fill-height"
-        fluid
-      >
-        <v-row
-          justify="center"
-        >
-            <div class="text-center">
-                <div style="width:100%;">
-                    <div style="display:inline-block;width:20%;text-align:center;">
-                        <div id="leftPlayer">PLAYER ONE</div>
-                        <div style="font-weight: bold;font-size: 50px;" >{{ leftScore }}</div>
-                    </div>
+    <v-app id="inspire" style="width:auto;">
+        <v-main>
+            <v-container class="fill-height" fluid>
+                <v-row justify="center">
+                    <div class="text-center">
+                        <div style="max-width:auto;">
+                            <div style="display:inline-block;width:20%;text-align:center;">
+                                <div :style="[ playerSide == 'left' ? {'background':'#5310a9'} : {} ]" id="leftPlayer">
+                                    PLAYER ONE</div>
+                                <div style="font-weight: bold;font-size: 50px;">{{ leftScore }}</div>
+                            </div>
 
-                    <div style="display:inline-block;width:60%;text-align:center;">
-                        <h1>Ping Pong Match</h1>
-                        <small>(UP - DOWN)</small><br/>
-                        <div>
-                            <a href="/game" class="btn" >Surrender!</a>
+                            <div style="display:inline-block;width:60%;text-align:center;">
+                                <h1>Ping Pong Match</h1>
+                                <small>(UP - DOWN)</small><br />
+                                <div>
+                                    <button class="btn" @click="back2game">
+                                        Leave
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div style="display:inline-block;width:19%;text-align:center;">
+                                <div :style="[ playerSide == 'right' ? {'background':'#5310a9'} : {} ]"
+                                    id="rightPlayer">PLAYER TWO</div>
+                                <div style="font-weight: bold;font-size: 50px;">{{ rightScore }}</div>
+                            </div>
                         </div>
+                        <div id="game"></div>
                     </div>
-
-                    <div style="display:inline-block;width:19%;text-align:center;">
-                        <div id="rightPlayer">PLAYER TWO</div>
-                        <div style="font-weight: bold;font-size: 50px;" >{{ rightScore }}</div>
-                    </div>
-                </div>
-                <div style="text-align: center;margin: 10px;">
-                    <!-- <button class="btn" id="startBtn" onclick="play()" >Start!</button>
-                    <button class="btn" id="pauseBtn" onclick="pauseGame()" >Pause!</button>
-                    <button class="btn" id="resetBtn" onclick="resetGame()" >Reset!</button> -->
-                    <!-- <a href="/game" class="btn" >Surrender!</a> -->
-                    <!-- <button class="btn" id="testBtn" onclick="TestMe()" >Test!</button>
-                    <button class="btn" id="testBtn1" onclick="TestMe1()" >Ping!</button>
-                    <button class="btn" id="testBtn2" onclick="TestMe2()" >LoopIt!</button> -->
-                </div>
-                <div id="game"></div>
-            </div>
-        </v-row>
-      </v-container>
-    </v-main>
-  </v-app>
+                </v-row>
+            </v-container>
+        </v-main>
+    </v-app>
 </template>
 
 <style lang="scss" scoped>
-
 $bg-color: #283747;
 $txt-color: white;
 
 body {
-	box-sizing: border-box;
-	padding: 0;
-	margin: 0;
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
     background-color: $bg-color;
     color: white;
     font-family: 'Montserrat', sans-serif;
@@ -349,6 +406,7 @@ body {
     justify-content: center;
     align-items: center;
 }
+
 .btn {
     margin: 5px;
     padding: 2px 5px;

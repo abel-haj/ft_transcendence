@@ -6,9 +6,8 @@ services:
   postgres:
     container_name: postgresql 
     image: postgres
-    environment:
-      - POSTGRES_USER=transcendence
-      - POSTGRES_PASSWORD=transcendence
+    env_file:
+      - ./.env.local
     ports:
       - 5432:5432
   ############################################### start backend ################################
@@ -22,8 +21,9 @@ services:
       #  - ./images:/back-end/images
       depends_on:
         - postgres
+      env_file:
+        - ./.env.local
       ports:
-        - 1337:1337
         - 3000:3000
       networks:
         default:
@@ -37,11 +37,13 @@ services:
         dockerfile: front-end.dockerfile
       depends_on:
         - back-end
+      env_file:
+        - ./.env.local
       volumes:
         - ./front-end:/front-end
      #   - ./images:/front-end/public/images
       ports:
-        - 8080:8080
+        - 8080:3000
       networks:
         default:
           aliases:

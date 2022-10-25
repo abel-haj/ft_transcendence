@@ -12,17 +12,15 @@ export class jwtStrategy extends PassportStrategy(Strategy)
     constructor(){
         super({
             ignoreExpiration: false,
-            secretOrKey:"My random secret key never let others",
+            secretOrKey: process.env.JWTSECRET,
             jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken()
         });
     }
 
     validate(payload:any)
     {
-        // console.log("test1")
         if(payload === null)
             throw new UnauthorizedException();
-        // console.log(payload)
         return payload
     }
 }

@@ -27,8 +27,13 @@ export class Users
 
     @Column()
     two_factor_authentication: boolean = false
+	
+    // @Column({nullable : true, select: false})
+    // inGamesock: string
 
-
+	@Column("text", { array: true, default: [], nullable: false })
+	inGamesock: string[]
+	
 	@Column("text", { array: true, default: [], nullable: false })
 	socket_savier: string[]
 
@@ -37,4 +42,16 @@ export class Users
     @OneToMany(() => Games, games => games.player_two)
     // joined: Games[];
     games: Games[];
+
+    @Column({ default: "" })
+    first_win: string
+
+    @Column({ default: "" })
+    conquer: string
+
+    @Column({ default: 0 })
+    level: number;
+
+	@Column({ default: "", nullable: false })
+	match: string;
 }

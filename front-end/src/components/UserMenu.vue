@@ -67,12 +67,20 @@
         >
           <v-list-item-title >Unblock</v-list-item-title>
         </v-list-item>
+       
         <v-list-item
           link
           v-else-if="status === 'friend' || status === 'user'"
           @click="blockuser(user)"
         >
           <v-list-item-title >block</v-list-item-title>
+        </v-list-item>
+        <v-list-item
+          link
+          v-if="user.status === 'In-Game'"
+          @click="redirectToGame(user.match)"
+        >
+          <v-list-item-title >Spectate Game</v-list-item-title>
         </v-list-item>
       </v-list>
     </v-menu>
@@ -86,6 +94,11 @@ import axios from 'axios';
     data: () => ({
     }),
     methods: {
+      redirectToGame: function (match)
+      {
+        this.$router.push({ path: '/play?match='+match }).catch(() => {})
+        this.$router.go(1);
+      },
       unblockuser: function (user)
       {
         const token = localStorage.getItem('token');
@@ -100,7 +113,6 @@ import axios from 'axios';
             this.$emit("unblockuser", res.data);
           }).bind(this))
           .catch(error => {
-            console.log(error);
           });
 
         }
@@ -119,7 +131,6 @@ import axios from 'axios';
             this.$emit("blockuser", user);
           }).bind(this))
           .catch(error => {
-            console.log(error);
           });
 
         }

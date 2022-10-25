@@ -8,6 +8,7 @@ import * as bcrypt from 'bcrypt';
 
 
 @Injectable()
+
 export class RoomsService {
 	constructor(
 	@InjectRepository(Rooms)
@@ -19,11 +20,16 @@ export class RoomsService {
 	//* Creates a new room and returns it.
 	async create(roomElem: RoomsDTO, userID: string): Promise<any>
 	{
+		if (/[ `!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~]/.test(roomElem.roomName) || /[ `!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~]/.test(userID))
+			return "Room name can't contain special characters";
 		let exist = await this.rooms.findBy({roomName: roomElem.roomName});
 		if (exist.length)
 			return "Chat room already exists";
 		if (roomElem.password)
 			roomElem.password = await bcrypt.hash(roomElem.password, 10);
+		if (/[ `!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~]/.test(roomElem.roomName))
+			return "Room name can't contain special characters";
+			
 		let tmp = this.rooms.create(roomElem);
 
 		let usr = this.roomUser.create({
@@ -50,22 +56,20 @@ export class RoomsService {
 		let tmp = await this.rooms.findOne({where: {roomName: room_name}})
 		if (tmp == null)
 		{
-			console.log("Room not found")
 			return "Room not found";
 		}
 		else
 		{
-			console.log("Room already exists")
 			let usrexist = await this.roomUser.findOne({where: {userID: +userID, roomName: room_name}})
 			
 			// if (usrexist && usrexist.status == 1 && usrexist.duration && +usrexist.duration > Date.now())
+
 			if (usrexist && usrexist.status == 2 && usrexist.duration && +usrexist.duration > Date.now())
 				return "User is banned from this chat";
 			
-			console.log(usrexist)
+
 			if (usrexist == null)
 			{
-				console.log("room's password ===> ", tmp.password, " user's password ===> ", password)
 				//TODO: check if the password is correct here
 				if (tmp.password)
 				{
@@ -79,21 +83,23 @@ export class RoomsService {
 					}
 
 				}
-				console.log("user not found")
+
 				let user = this.roomUser.create({userID: +userID, role:"user", status:0, roomName: room_name, duration: "0"})
-				console.log("RoomUser ===> ", user)
+	
 				await this.roomUser.save(user)
 				let res = await this.roomUser.find({where: {userID: +userID, roomName: room_name}})
-				console.log(res)
+
 				return res;
 			}
 			else
-				return "User already joined";
+				return usrexist;
 		}
 	}
 
 	async leaveUserRoom(userID: string, room_name: string): Promise<any>
 	{
+		if (/[ `!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~]/.test(room_name))
+			return ;
 		let usr = await this.roomUser.findOne({where: {roomName: room_name, userID: +userID}})
 		if (usr)
 		{
@@ -166,6 +172,8 @@ export class RoomsService {
 
 	async getuserOfRoom(userID: number, roomName: string): Promise<any>
 	{
+		if (/[ `!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~]/.test(roomName))
+			return ;
 		return this.roomUser.find({where: {userID: userID, roomName: roomName}})
 	}
 	

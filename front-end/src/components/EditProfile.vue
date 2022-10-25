@@ -214,11 +214,12 @@ import axios from 'axios';
               headers: {
                 Authorization: token
               }
-            }).then(res => {
+            }).then((function (res) {
               this.dialod = false;
-              this.error = false;
+              if (this.error === true)
+                this.error = false;
               this.username = this.usernameEdit;
-            })
+            }).bind(this))
             .catch((function (err) {
               this.error = true;
             }).bind(this));
@@ -235,7 +236,6 @@ import axios from 'axios';
               number: +this.verification
             };
   
-            console.log(data);
             axios.put('/2FA/verify', data, {}).then((function (res) {
               this.dialod = false;
               this.error = false;

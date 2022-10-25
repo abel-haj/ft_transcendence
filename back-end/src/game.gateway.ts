@@ -16,44 +16,46 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection{
 		private readonly userservice: UsersService,
 	){}
 	private queuePlayers: Array<{ sockId: string, token: any; }> = [];
+	private queueSpeedyPlayers: Array<{ sockId: string, token: any; }> = [];
 
 	afterInit(server: any) {
-		console.log("SERVER: Game Web Socket initialized!");
 	}
 
 	handleConnection(client: Socket, ...args: any[]) {
-		console.log("SERVER: Game client connected", client.id);
 	}
 	handleDisconnect(client: Socket) {
-		console.log("SERVER: Game client disconnected", client.id);
 
 		// pop from QUEUE PLAYERS
-		let ind: number = this.queuePlayers.findIndex((elm: any) => elm.sockId == client.id);
-		if (ind !== -1) {
-			this.queuePlayers.splice(ind, 1);
+		let ind1: number = this.queuePlayers.findIndex((elm: any) => elm.sockId == client.id);
+		if (ind1 !== -1) {
+			this.queuePlayers.splice(ind1, 1);
+		}
+
+		// pop from QUEUE PLAYERS
+		let ind2: number = this.queueSpeedyPlayers.findIndex((elm: any) => elm.sockId == client.id);
+		if (ind2 !== -1) {
+			this.queueSpeedyPlayers.splice(ind2, 1);
 		}
 	}
 
 
 	@SubscribeMessage('cancelQueue')
 	handleCancelQueue(client: Socket) {
-		console.log('SERVER: Game client wanted to leave the queue');
 
 		let ind = this.queuePlayers.findIndex((elm: any) => elm.sockId == client.id );
 		if (ind != -1)
 			this.queuePlayers.splice(ind,1);
-		// console.log("SERVER: TOTAL QUEUE PLAYERS NOW", this.queuePlayers.length);
 	}
 
 
 	@SubscribeMessage('joinQueue')
-	async handleJoinQueue(client: Socket) {
-		console.log("SERVER: GOT REQUEST TO JOIN");
+	async handleJoinQueue(client: Socket, ...args: any[]) {
 
-		let tkn = JSON.parse(Buffer.from(client.handshake.headers.authorization.split('.')[1], 'base64').toString('utf8'));
+		if (!args || !args[0] || !args[0].token)
+			return ;
 
+		let tkn = JSON.parse(Buffer.from(args[0].token.split('.')[1], 'base64').toString('utf8'));
 
-		console.log("SERVER: Game client joined the queue", client.id);
 
 		// user already joined
 		// update socket
@@ -66,7 +68,6 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection{
 		if (this.queuePlayers.findIndex((elm: any) => elm.sockId == client.id ) === -1)
 			{ this.queuePlayers.push({ sockId: client.id, token: tkn }); }
 
-		// console.log("SERVER: TOTAL QUEUE PLAYERS", this.queuePlayers.length);
 
 		if (this.queuePlayers.length >= 2) {
 
@@ -75,13 +76,52 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection{
 
 			let new_game_id = await this.gamesservice.startGame(usr1, usr2);
 
-			// this.gamesservice.getAll().then(res => console.table('GAMES HERE', res) );
-
 			this.wss.to([this.queuePlayers[0].sockId, this.queuePlayers[1].sockId]).emit('queueResponse', new_game_id);
 
 			this.queuePlayers.splice(0, 2);
 		}
+	}
 
-		// console.log(this.queuePlayers);
+
+	@SubscribeMessage('cancelSpeedyQueue')
+	handleCancelSpeedyQueue(client: Socket, ...args: any[]) {
+
+		let ind = this.queueSpeedyPlayers.findIndex((elm: any) => elm.sockId == client.id );
+		if (ind != -1)
+			this.queueSpeedyPlayers.splice(ind,1);
+	}
+
+
+	@SubscribeMessage('joinSpeedyQueue')
+	async handleJoinSpeedyQueue(client: Socket, ...args: any[]) {
+
+		if (!args || !args[0] || !args[0].token)
+			return ;
+
+		let tkn = JSON.parse(Buffer.from(args[0].token.split('.')[1], 'base64').toString('utf8'));
+
+
+		// user already joined
+		// update socket
+		let ind = this.queueSpeedyPlayers.findIndex((elm: any) => elm.token.sub == tkn.sub );
+		if (ind !== -1) {
+			this.queueSpeedyPlayers[ind].sockId = client.id;
+		}
+
+		// socket already joined
+		if (this.queueSpeedyPlayers.findIndex((elm: any) => elm.sockId == client.id ) === -1)
+			{ this.queueSpeedyPlayers.push({ sockId: client.id, token: tkn }); }
+
+		if (this.queueSpeedyPlayers.length >= 2) {
+
+			let usr1 = await this.userservice.findOne(this.queueSpeedyPlayers[0].token.name);
+			let usr2 = await this.userservice.findOne(this.queueSpeedyPlayers[1].token.name);
+
+			let new_game_id = await this.gamesservice.startGame(usr1, usr2, 2);
+
+			this.wss.to([this.queueSpeedyPlayers[0].sockId, this.queueSpeedyPlayers[1].sockId]).emit('queueSpeedyResponse', new_game_id);
+
+			this.queueSpeedyPlayers.splice(0, 2);
+		}
 	}
 } 

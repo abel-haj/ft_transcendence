@@ -6,30 +6,75 @@ import FriendList from '../components/FriendList.vue';
 import FriendsStatus from '../components/FriendsStatus.vue';
 import Profile from '@/components/Profile.vue';
 import axios from 'axios';
-import io from 'socket.io-client';
-import { SocketInstance } from '@/main';
+import Ladder from '@/components/Ladder.vue';
 
-// SocketInstance.on('msgToClient')
-// SocketInstance.on('msgToClient', (msg: any) => {
-// 	console.log(`received a message: ${msg}`)
-// 	// this.messages.push({id: 0, from: "", message: msg, time: "", color: 'deep-purple lighten-1'}); // id should be dynamic
-// })
 export default Vue.extend({
     name: "App",
     sockets: {
       msgToClient(data) {
-        console.log("dataaaa >> ");
-        console.log(data);
         this.messages.push({id: this.messages.length, from: data.sender, room: data.roomName, message: data.message});
         if (this.currentRoom == data.roomName)
           this.showmessages.push({id: this.showmessages.length, from: data.sender, room: data.roomName, message: data.message});
       },
       msgToRoom(data) {
-        
+        for(let i = 0; i < this.blocked.length; i++)
+        {
+          if(this.blocked[i].username === data.sender.username)
+            return;
+        }
         this.messages.push({id: this.messages.length, from: data.sender, room: data.roomName, message: data.message});
         if (this.currentRoom == data.roomName)
           this.showmessages.push({id: this.showmessages.length, from: data.sender, room: data.roomName, message: data.message});
+      },
+	  leaveRoom(data)
+	  {
+      if (this.me[0].username === data[0])
+      {
+
+        this.rooms = this.rooms.filter(r => r.roomName !== data[1]);
+        this.$socket.emit('leaveRoom', data[0]);
+        this.currentRoom = "";
+        
       }
+	  },
+	  statusChanged(data)
+	  {
+
+      for (let i = 0; i < this.friendlist.length; i++)
+      {
+        if (this.friendlist[i].username === data.username)
+        {
+          this.friendlist[i].status = data.status;
+          if (data.gameID)
+            this.friendlist[i].match = data.gameID;
+          return ;
+        }
+      }
+
+      for (let i = 0; i < this.users.length; i++)
+      {
+        if (this.users[i].username === data.username)
+        {
+
+          if (data.gameID)
+            this.users[i].match = data.gameID;
+          this.users[i].status = data.status;
+          return ;
+        }
+      }
+
+      for (let i = 0; i < this.blocked.length; i++)
+      {
+        if (this.blocked[i].username === data.username)
+        {
+          if (data.gameID)
+            this.blocked[i].match = data.gameID;
+          this.blocked[i].status = data.status;
+          return ;
+        }
+      }
+    
+	  }
     },
     data: () => ({
       setUsername: false,
@@ -48,19 +93,7 @@ export default Vue.extend({
       drawer: null,
       placeHolder: "",
       tmp: [],
-      showmessages: [{
-        id: 0,
-        message: "Use /help command to see available options",
-        room: "",
-        from: {
-          two_factor_authentication: false,
-          id: 2,
-          username: 'asdfasfd',
-          intra_login: 'hboudhir',
-          avatar: 'https://cdn.intra.42.fr/users/hboudhir.jpg',
-          status: 'Offline'
-          },
-      }],
+      showmessages: [],
       messages: [
       ],
       users: [],
@@ -68,6 +101,31 @@ export default Vue.extend({
 
     }),
     methods: {
+    loadImage(event) {
+      const token = localStorage.getItem('token');
+      const { files } = event.target;
+      if (token && files && files[0]) {
+        const data = new FormData();
+        data.append("file", files[0]);
+        
+        axios.post("/upload/image", data, {
+          headers: {
+              Authorization: token
+            }
+        }).then((function (res) {
+          this.error = false;
+          this.avatar = res.data;
+        }).bind(this)).catch((function (err) {
+          this.error = true;
+        }).bind(this));
+      }
+    },
+		logout: function()
+		{
+
+			this.$socket.emit('disconnectUser', this.me[0].username);
+			
+		},
       changeAvatar: function(newavatar)
       {
         this.avatar = newavatar;
@@ -99,7 +157,7 @@ export default Vue.extend({
 
           }).bind(this))
           .catch(error => {
-            console.log(error);
+
           });
         }
       },
@@ -111,26 +169,26 @@ export default Vue.extend({
         {
           if (this.friendlist[i].username === username)
           {
-            console.log("found  ");
+
             const token = localStorage.getItem('token');
 
             if (token)
             {
-              console.log("id ==> ", this.friendlist[i].id);
+
               axios.get('/friend/remove/' + this.friendlist[i].id, {
               headers: {
                 Authorization: token
               }}).then(res => {
-                console.log("removed");
+
                 // this.$emit("Addroom", res.data);
                 if (this.me[0].id < this.friendlist[i].id)
                 {
-                  console.log("left room -->"+this.me[0].id+"-"+this.friendlist[i].id);
+
                   this.$socket.emit('leaveRoom', this.me[0].id+"-"+this.friendlist[i].id);
                 }
                 else
                 {
-                  console.log("left room -->"+this.friendlist[i].id+"-"+this.me[0].id);
+
                   this.$socket.emit('leaveRoom', this.friendlist[i].id+"-"+this.me[0].id);
                 }
 
@@ -139,7 +197,7 @@ export default Vue.extend({
 
               })
               .catch(error => {
-                console.log(error);
+
               });
             }
           }
@@ -173,20 +231,20 @@ export default Vue.extend({
 
           }).bind(this))
           .catch(error => {
-            console.log(error);
+
           }); 
         }
       },
       submitMessage: function(e: any) {
-        if (e.target.value === '/help')
+        if ((!this.roomorfriend || this.currentRoom === '') && e.target.value === '/help')
         {
           this.showmessages.push({
-            message: "Use /ban [duration] [username] to ban a user for a limited time",
+            message: "Use /ban [username] [duration] to ban a user for a limited time",
             roomName: this.currentRoom,
             from: this.me[0],
           });
           this.showmessages.push({
-            message: "Use /mute [duration] [username] to mute a user for a limited time",
+            message: "Use /mute [username] [duration] to mute a user for a limited time",
             roomName: this.currentRoom,
             from: this.me[0],
           });
@@ -200,29 +258,86 @@ export default Vue.extend({
             roomName: this.currentRoom,
             from: this.me[0],
           });
+		      this.showmessages.push({
+            message: "Use /leave to leave this chat room",
+            roomName: this.currentRoom,
+            from: this.me[0],
+          });
           this.placeHolder = "";
         }
-        else if (e.target.value !== '' && e.target.value.startsWith("/"))
+        else if (!this.roomorfriend && e.target.value !== '' && e.target.value.startsWith("/"))
         {
-          if (!this.placeHolder.startsWith("/leave") && !this.placeHolder.startsWith("/ban") && !this.placeHolder.startsWith("/mute"))
-          {
+			      var arr = this.placeHolder.split(" ");
+          	if (arr[0] !== '/ban' && arr[0] !== '/mute' && arr[0] !== '/leave' && arr[0] !== '/admin' && arr[0] !== '/changepassword' && arr[0] !== '/help')
+          	{
 
-            this.showmessages.push({
-              message: "Unknown command. Please use /help.",
-              roomName: this.currentRoom,
-              from: this.me[0],
-            });
-          }
+            	this.showmessages.push({
+        			message: "Unknown command. Please use /help.",
+              		roomName: this.currentRoom,
+              		from: this.me[0],
+            		});
+          	}
+            else if ((arr[0] === '/ban' || arr[0] === '/mute') && arr.length !== 3)
+            {
+              this.showmessages.push({
+                    message: "Wrong number of arguments. Please use /help.",
+                        roomName: this.currentRoom,
+                        from: this.me[0],
+                      });
+            }
+            else if ((arr[0] === '/admin' || arr[0] === '/changepassword') && arr.length  !== 2)
+            {
+              this.showmessages.push({
+                    message: "Wrong number of arguments. Please use /help.",
+                        roomName: this.currentRoom,
+                        from: this.me[0],
+                      });
+            }
+            else
+            {
+              this.$socket.emit('msgToRoom', {text: this.placeHolder, room: this.currentRoom, userID: this.me[0].id})
+              this.messages.push({id: this.messages.length, from: this.me[0], room: this.currentRoom, message: this.placeHolder});
+
+            }
           this.placeHolder = "";
+        }
+        else if (this.roomorfriend && e.target.value == "/invite")
+        {
+
+              const token = localStorage.getItem('token');
+
+              if (token)
+              {
+                axios.get('/invite_game/'+this.me[0].id, {
+                  headers: {
+                    Authorization: token
+                  }
+                }).then((function (res) {
+
+                  this.placeHolder = "http://"+process.env.VUE_APP_HOSTIP+":8080/play?match="+res.data.generatedMaps[0].id;
+                  this.$socket.emit('msgToClientDM', {text: this.placeHolder, room: this.currentRoom, sender: this.me[0].id, receiver: this.receiverID})
+                  this.placeHolder = "";
+                  this.$router.push({ path: '/play?match='+res.data.generatedMaps[0].id }).catch(() => {})
+                  this.$router.go(1);
+                this.$router.go(1);
+                }).bind(this))
+                .catch(error => {
+
+                });
+              }
         }
         else if (e.target.value !== '' && this.currentRoom != '')
         {
           this.showmessages.push({id: this.showmessages.length, room: this.currentroom, from: this.me[0], message: e.target.value});
           if (this.roomorfriend == true)
-            this.$socket.emit('msgToClientDM', {text: this.placeHolder, room: this.currentRoom, sender: this.me[0].id, receiver: this.receiverID})
-          else
           {
-            this.$socket.emit('msgToRoom', {text: this.placeHolder, room: this.currentRoom, userID: this.me[0].id})
+            this.$socket.emit('msgToClientDM', {text: this.placeHolder, room: this.currentRoom, sender: this.me[0].id, receiver: this.receiverID})
+              this.messages.push({id: this.messages.length, from: this.me[0], room: this.currentRoom, message: this.placeHolder});
+            }
+            else
+            {
+              this.$socket.emit('msgToRoom', {text: this.placeHolder, room: this.currentRoom, userID: this.me[0].id})
+              this.messages.push({id: this.messages.length, from: this.me[0], room: this.currentRoom, message: this.placeHolder});
           }
           this.placeHolder = "";
         }
@@ -243,7 +358,6 @@ export default Vue.extend({
           });
         }
         
-        // SocketInstance.join()
         
       },
       showChatroom: function(roomname)
@@ -265,23 +379,27 @@ export default Vue.extend({
       
       setUsernameMethod: function()
       {
-        if (this.me.username.length > 5 && this.me.username.length < 10)
+        if (this.username.length > 5 && this.username.length < 10)
         {
           const token = localStorage.getItem('token');
 
           if (token)
           {
+
             axios.patch('/update', {
-              userame: this.me.username
+              userame: this.username
             }, {
               headers: {
                 Authorization: token
               }
             }).then(res => {
               this.setUsername = false;
+              this.me[0].username = this.username;
+				      this.$socket.emit('connectUser', {username: this.me[0].username, label: "Online"});
+
             })
             .catch(error => {
-              console.log(error);
+
             });
           }
         }
@@ -296,20 +414,35 @@ export default Vue.extend({
       axios.get('/user/me', {
         headers: {
           Authorization: token
-      }}).then(async (res) => {
-        await this.me.push(res.data);
+		}}).then((async function(res) {
+			
+		this.$socket.connect();
+    	await this.me.push(res.data);
         this.avatar = this.me[0].avatar;
         if (this.me[0].username === null)
-          this.setUsername = true;
-      })
-      .catch(error => {
-        console.log(error);
-      });
+			    this.setUsername = true;
+        else
+        {
+          
+          this.showmessages.push({
+              id: 0,
+              message: "Use /help command to see available options",
+              room: "",
+              from: this.me[0],
+            });
+          this.$socket.emit('connectUser', {username: this.me[0].username, label: "Online"});
+        }
+    
 
-      // this.$socket.emit('connectUser', this.me[0].username, "blabla");
 
-      this.$public.connect();
-      this.$public.emit('msgToServer', "blabla");
+
+
+	}).bind(this))
+	.catch(error => {
+
+	});
+	
+	// this.$socket.emit('connectUser', this.me[0].username, "blabla");
 
 
       axios.get('/users', {
@@ -318,14 +451,7 @@ export default Vue.extend({
       }}).then(res => {
         this.users = res.data;
         
-        console.log("users == >");
-        console.log(this.users);
-        this.users = this.users.filter((el) => {
-            return this.me.some((f) => {
-              return f.username !== el.username;
-            });
-          });
-        
+
         axios.get('/friend/find', {
           headers: {
             Authorization: token
@@ -339,6 +465,7 @@ export default Vue.extend({
               this.friendlist.forEach(element => {
                 if (element.username == el.username)
                 {
+
                   ret = false;
                 }
               });
@@ -368,31 +495,31 @@ export default Vue.extend({
 
           }).bind(this))
           .catch(error => {
-            console.log(error);
+
           });
 
           for (let i = 0; i < this.friendlist.length; i++)
           {
             if (this.me[0].id < this.friendlist[i].id)
             {
-              console.log(this.me[0].id+"-"+this.friendlist[i].id);
+
               this.$socket.emit('joinDM', this.me[0].id+"-"+this.friendlist[i].id);
             }
             else
             {
               this.$socket.emit('joinDM', this.friendlist[i].id+"-"+this.me[0].id);
-              console.log(this.friendlist[i].id+"-"+this.me[0].id);
+
             }
           }
 
         }).bind(this))
         .catch(error => {
-          console.log(error);
+
         });
         
       })
       .catch(error => {
-        console.log(error);
+
       });
 
       axios.get('/rooms/findUserRooms', {
@@ -400,8 +527,7 @@ export default Vue.extend({
           Authorization: token
       }}).then((function (res) {
         this.rooms = res.data;
-        console.log("rooooooms");
-        console.log(res.data);
+
         for(let i = 0; i < this.rooms.length; i++)
         {
           this.$socket.emit('joinRoom', this.rooms[i].roomName);
@@ -409,13 +535,14 @@ export default Vue.extend({
 
       }).bind(this))
       .catch(error => {
-        console.log(error);
+
       });
 
       
     }
+
   },
-  components: { TopBar, UserAvatar, FriendList, FriendsStatus, Profile }
+  components: { TopBar, UserAvatar, FriendList, FriendsStatus, Profile, Ladder }
 
   },
 );
@@ -431,10 +558,10 @@ export default Vue.extend({
       app
       width="300"
     >
-      <UserAvatar @showChatroom="showChatroom" @changeAvatar="changeAvatar" @Addroom="addroom" :rooms="rooms" :avatar="avatar" />
+      <UserAvatar :userme="username" @showChatroom="showChatroom" @changeAvatar="changeAvatar" @Addroom="addroom" :rooms="rooms" :avatar="avatar" />
 
       <v-sheet
-        height="164"
+        height="205"
         width="100%"
       >
       
@@ -462,9 +589,11 @@ export default Vue.extend({
                     
                 </v-list-item>
             </router-link>
+            <Ladder />
             <router-link style="text-decoration: none;" to="/Logout">
                 <v-list-item
                     link
+					@click="logout()"
                 >
                     <v-list-item-content>
                     <v-list-item-title>Logout</v-list-item-title>
@@ -489,7 +618,7 @@ export default Vue.extend({
                       class=""
                     >
                       <v-list-item-avatar class="align-self-start mr-2">
-                        <Profile :avatar="message.from.avatar" :username="message.from.username" />                   
+                        <Profile :avatar="message.from.avatar" :id="message.from.id" :username="message.from.username" />                   
                                 
                       </v-list-item-avatar>
                       <v-list-item-content class="received-message">
@@ -536,6 +665,24 @@ export default Vue.extend({
         </v-card-title>
         <v-card-text>
           <v-container>
+            <v-row>
+              <v-col align="center"
+                justify="center">
+                 <v-avatar size="102">
+                    <img
+                        :src="avatar"
+                        alt="John"
+                    >
+                </v-avatar>
+              </v-col>
+              
+            </v-row>
+
+            <v-row>
+              <v-col>
+                <input ref="file" type="file" accept="image/*" @submit.prevent @change="loadImage($event)" />
+              </v-col>
+            </v-row>
             <v-row>
               <v-col
               >

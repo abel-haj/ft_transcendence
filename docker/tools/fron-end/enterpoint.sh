@@ -1,3 +1,6 @@
 #!/bin/bash
 npm install
-npm run serve
+npm install -g serve
+# npm run serve
+npm run build
+serve -s dist

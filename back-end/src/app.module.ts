@@ -11,9 +11,9 @@ import { FrinedCtroller } from './friend.controller';
 import { BlockCtroller } from './block.controller';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
-import { historyCtroller } from './history.controller';
 import { GameGateway } from './game.gateway';
 import { CanvasGateway } from './canvas.gateway';
+import { SpeedyGateway } from './speedy.gateway';
 import { GamesModule } from './games/games.module';
 
 @Module({
@@ -26,16 +26,16 @@ import { GamesModule } from './games/games.module';
         type: 'postgres',
         host: 'postgresql',
         port: 5432,
-        username: 'transcendence',
-        password: 'transcendence',
+        username: process.env.POSTGRES_USER,
+        password: process.env.POSTGRES_PASSWORD,
         autoLoadEntities: true,
-        synchronize: true,
+        synchronize: true, // remove this shit 
     },
     ),
     //, {serveStaticOptions: {index: false , extensions: ['png', 'jpeg', 'jpg', 'bmp', 'ico']}}
     ServeStaticModule.forRoot({rootPath: join('/back-end/src', 'public'), serveRoot: '/public/',serveStaticOptions: {index: false},})
   ],
-  controllers: [AppController, FrinedCtroller, BlockCtroller, historyCtroller],
-  providers: [AppService, pass_42Guard, AppGateway, GameGateway, CanvasGateway],
+  controllers: [AppController, FrinedCtroller, BlockCtroller],
+  providers: [AppService, pass_42Guard, AppGateway, GameGateway, CanvasGateway, SpeedyGateway],
 })
 export class AppModule {}
